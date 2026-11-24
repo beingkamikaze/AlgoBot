@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "/Users/mayank/TradingBot/backend/.venv/bin/uvicorn",
+      "runtimeArgs": ["--app-dir", "/Users/mayank/TradingBot/backend", "app.main:app", "--port", "8100", "--reload", "--reload-dir", "/Users/mayank/TradingBot/backend/app"],
+      "port": 8100
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "/Users/mayank/TradingBot/web", "run", "dev"],
+      "port": 3100
+    }
+  ]
+}

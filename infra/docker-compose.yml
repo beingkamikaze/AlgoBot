@@ -1,0 +1,25 @@
+# TradingBot on one server: Caddy (HTTPS) -> web (Next.js) and backend (FastAPI). Supabase stays hosted.
+#   cd ~/TradingBot && docker compose -f infra/docker-compose.yml --env-file infra/.env up -d --build
+services:
+  backend:
+    build: { context: .., dockerfile: infra/backend.Dockerfile }
+    env_file: ../backend/.env
+    volumes: ["bars:/app/data"]
+    restart: unless-stopped
+  web:
+    build:
+      context: ..
+      dockerfile: infra/web.Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_API_URL: https://${DOMAIN}
+    restart: unless-stopped
+  caddy:
+    image: caddy:2.10
+    ports: ["80:80", "443:443"]
+    environment: { DOMAIN: "${DOMAIN}" }
+    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data", "caddy_config:/config"]
+    depends_on: [backend, web]
+    restart: unless-stopped
+volumes: { bars: {}, caddy_data: {}, caddy_config: {} }

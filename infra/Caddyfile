@@ -1,0 +1,20 @@
+# Automatic HTTPS for your domain (Let's Encrypt). The API and the web app share one origin.
+{$DOMAIN} {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	handle /api/* {
+		reverse_proxy backend:8100 {
+			# only Caddy says who the caller is: drop look-alike headers a caller could send
+			header_up -CF-Connecting-IP
+			header_up -X-Real-IP
+		}
+	}
+	handle {
+		reverse_proxy web:3100
+	}
+}
