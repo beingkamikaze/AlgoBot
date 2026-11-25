@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # its token here; then link your chat from the XAUUSD agent page. Only one backend may run with a token at a time.
     telegram_bot_token: str = ""
 
+    # MT5 (demo only until live gold trading is cleared): the bridge runs on the Windows machine next to the MT5 terminal
+    # (backend/app/global_markets/mt5/bridge.py). The token is the bridge's BRIDGE_TOKEN; nothing here places orders yet.
+    mt5_bridge_url: str = ""                  # e.g. http://127.0.0.1:8710
+    mt5_bridge_token: str = ""
+
     # NSE option-chain recorder: a NIFTY chain snapshot every 5 minutes in market hours, saved under backend/data
     chain_recorder_enabled: bool = True
 

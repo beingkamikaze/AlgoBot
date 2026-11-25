@@ -334,3 +334,28 @@ async def agent_look(user: User = Depends(current_user)) -> dict:
 async def ticket_from_idea(idea_id: str, user: User = Depends(current_user)) -> dict:
     """Turn a live agent idea into a paper ticket, priced now. It still needs the risk check and your confirmation."""
     return await _desk(desk.ticket, user.id, idea_id)
+
+
+# ---------------------------------------------------------------- MT5 (demo only, read-only here)
+
+def _mt5_status() -> dict:
+    from app.global_markets.mt5.broker import BridgeClient, Mt5Broker, Mt5Error
+    s = get_settings()
+    out: dict = {"configured": bool(s.mt5_bridge_url and s.mt5_bridge_token), "connected": False, "error": None,
+                 "paper_spread": paper.QUOTES.spread}
+    if not out["configured"]:
+        return out
+    try:
+        b = Mt5Broker(BridgeClient(s.mt5_bridge_url, s.mt5_bridge_token, timeout=5))
+        h = b.connect()
+        out.update(connected=True, account=h["account"], symbol=b.spec, quote=b.quote(),
+                   positions=len(b.client.positions()), pending=len(b.client.orders()))
+    except Mt5Error as e:
+        out["error"] = str(e)
+    return out
+
+
+@router.get("/mt5")
+async def mt5_status(user: User = Depends(current_user)) -> dict:
+    """Is the MT5 demo bridge reachable, which account is it on, and what spread is the broker quoting right now?"""
+    return await run_in_threadpool(_mt5_status)

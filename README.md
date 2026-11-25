@@ -220,6 +220,12 @@ webhooks need a paid TradingView plan and two-factor authentication on the Tradi
 - [x] Telegram approval, built 23 Nov 2026 (`app/telegram/`, migration `0010_telegram.sql`, `TELEGRAM_BOT_TOKEN`): link one
       private chat with a one-time code from the XAUUSD agent page; live ideas arrive with buttons, a ticket takes two taps to
       confirm and the risk check runs again; fills and exits are sent. Long-polling, so no public URL is needed. Paper only
+- [x] MT5 adapter, built 25 Nov 2026 against a fake MT5 only (`global_markets/mt5/`): a bridge that runs on Windows next to
+      the MT5 terminal (`bridge.py`, the only code touching the MetaTrader5 package; one symbol, one magic number, demo
+      accounts only, token required) and the app's client and broker (`broker.py`: lots converted to the broker's lot and
+      rounded down, marketable limits sent as deals capped at the limit, an order tag so a lost answer is looked up instead
+      of resent, plain-language refusals, reconciliation). `GET /api/global/mt5` shows the demo connection and the broker's
+      spread. Nothing places MT5 orders yet: wiring it into a live gold desk waits for the lawyer's answer
 - First real number, a coin flip on 50 sessions of `GC=F` with a 2 ATR stop: -0.056R ± 0.071, in line with costs of 0.087R
 - Twelve Data has not been tried against the real service yet. Signals never trade by themselves
 
