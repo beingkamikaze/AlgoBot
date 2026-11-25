@@ -265,6 +265,7 @@ export function GlobalPaper() {
                             if (!(await confirm({ title: `Close ${t.symbol}?`, body: "An exit fills at the next 1-minute bar's open, at the bid for a long and the ask for a short. Exits are never blocked.", confirm: "Close position", tone: "primary" }))) return;
                             if (await post(`/global/paper/positions/${t.id}/close`)) toast("success", `Closing ${t.symbol}`, "Exit order working.");
                           }} className="btn btn-sm">Close</button>
+                          <a href={`/global/monitor?trade=${t.id}`} className="btn btn-sm ml-1.5">Monitor</a>
                         </td>
                       </tr>
                     ))}

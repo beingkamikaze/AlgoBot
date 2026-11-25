@@ -232,6 +232,9 @@ webhooks need a paid TradingView plan and two-factor authentication on the Tradi
       and target are held at the broker; a 10 s sync records the broker's real fills, exits, profit and charges as `demo`
       trades, closes at flat-by, and names any difference between the app and MT5. Same daily limits and kill switch as
       paper. Demo accounts only; never tested with a real terminal yet. Live gold waits for the lawyer's answer
+- [x] XAUUSD trade monitor, built 25 Nov 2026 (`global_markets/monitor.py`, **XAUUSD monitor** page): open gold trades
+      read against the live chart with fixed checks (strategy thesis, trend, momentum, shock, stop, room, US releases, stale
+      prices, time), health, and alerts to the page, `risk_events` and Telegram; a 30 s background pass. Never trades
 - First real number, a coin flip on 50 sessions of `GC=F` with a 2 ATR stop: -0.056R ± 0.071, in line with costs of 0.087R
 - Twelve Data has not been tried against the real service yet. Signals never trade by themselves
 

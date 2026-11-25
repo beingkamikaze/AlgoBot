@@ -317,6 +317,16 @@ def on_paper(kind: str, user_id: str, data: dict) -> None:
         _outbox.put((chat, text, None))
 
 
+def on_monitor(user_id: str, alert: dict) -> None:
+    """A trade monitor alert on one of your open gold trades."""
+    if not configured():
+        return
+    mark = "⚠️ " if alert.get("level") == "high" else ""
+    text = f"{mark}<b>Monitor: {esc(alert['title'])}</b>\n{esc(alert.get('detail') or '')}"
+    for chat in _chats(user_id):
+        _outbox.put((chat, text, None))
+
+
 def send_test(user_id: str) -> None:
     chats = _chats(user_id)
     if not chats:

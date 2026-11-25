@@ -213,6 +213,24 @@ export type GlobalLimits = {
   entry_start_london: string; entry_end_new_york: string; flat_by_new_york: string;
 };
 
+export type GlobalMonitorTrade = {
+  trade: { id: string; mode: "paper" | "live" | "demo"; symbol: string; side: "buy" | "sell"; lots: number; units: number; entry: number;
+           entry_ts: string; exit_ts: string | null; price_source: "spot" | "futures"; strategy: string | null; strategy_name: string | null;
+           why: string | null };
+  direction: "long" | "short";
+  levels: { entry: number; stop: number; target: number | null; entry_t: number };
+  agent_wrong_if: string | null; flat_by: string | null;
+  health: MonitorHealth; headline: string;
+  progress?: { price: number; r: number | null; mfe_r: number | null; mae_r: number | null };
+  time?: { minutes_in: number; minutes_to_flat: number | null };
+  checks: MonitorCheck[]; sr: { price: number; label: string; kind: "support" | "resistance" }[];
+  unrealized?: number; alerts: MonitorAlert[]; as_of: string;
+};
+export type GlobalMonitorSummary = {
+  trade_id: string; mode: string; symbol: string; side: "buy" | "sell"; health: MonitorHealth; headline: string; r: number | null;
+  unrealized: number | null; alerts: MonitorAlert[];
+};
+
 export type GlobalPaperOverview = {
   account: { currency: string; starting_capital: number; capital: number; realized_today: number; realized_month: number;
     open_risk: number; entries_today: number; consecutive_losses: number; kill_switch: boolean };

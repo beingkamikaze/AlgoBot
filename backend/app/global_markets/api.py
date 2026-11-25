@@ -371,3 +371,22 @@ def _mt5_status() -> dict:
 async def mt5_status(user: User = Depends(current_user)) -> dict:
     """Is the MT5 demo bridge reachable, which account is it on, and what spread is the broker quoting right now?"""
     return await run_in_threadpool(_mt5_status)
+
+
+# ---------------------------------------------------------------- trade monitor
+
+@router.get("/monitor")
+async def monitor_overview(user: User = Depends(current_user)) -> list[dict]:
+    """Every open gold trade (paper and MT5 demo) with its health and recent alerts."""
+    from app.global_markets import monitor
+    return await run_in_threadpool(monitor.overview, user.id)
+
+
+@router.get("/monitor/{trade_id}")
+async def monitor_trade(trade_id: str, user: User = Depends(current_user)) -> dict:
+    """One trade read against the live chart: progress in R, the checks, key levels and alerts."""
+    from app.global_markets import monitor
+    try:
+        return await run_in_threadpool(monitor.analyze_trade, user.id, trade_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e))

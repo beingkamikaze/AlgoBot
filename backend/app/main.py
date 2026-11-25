@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
         from app.market import ticks
         feed_loop = ticks.loop = ticks.FeedLoop()  # Kite ticks -> bars, while you are logged in to Kite today
         feed_loop.start()
-    global_loop = global_scan = global_agent = None
+    global_loop = global_scan = global_agent = global_monitor = None
     if get_settings().supabase_service_role_key:
         from app.global_markets.paper import Loop as GlobalLoop
         global_loop = GlobalLoop()                 # XAUUSD paper: fills, stops, targets and the flat-by exit
@@ -62,6 +62,9 @@ async def lifespan(app: FastAPI):
         from app.global_markets.agent.desk import AgentLoop
         global_agent = AgentLoop()                 # the gold agent: looks when something happens, proposes; you confirm
         global_agent.start()
+        from app.global_markets.monitor import MonitorLoop
+        global_monitor = MonitorLoop()             # every open gold trade read against the live chart; alerts, no trading
+        global_monitor.start()
     mt5_sync = None
     if get_settings().supabase_service_role_key and get_settings().mt5_bridge_url and get_settings().mt5_bridge_token:
         from app.global_markets.mt5.desk import SyncLoop
@@ -74,6 +77,8 @@ async def lifespan(app: FastAPI):
         from app.telegram import service as tg
         agent_desk.listeners.append(tg.on_idea)    # live ideas, fills and exits go to your linked Telegram chat
         global_paper.listeners.append(tg.on_paper)
+        from app.global_markets import monitor as global_monitor_mod
+        global_monitor_mod.listeners.append(tg.on_monitor)    # monitor alerts: a check failing, health getting worse
         telegram = tg.TelegramLoop()
         telegram.start()
     backfill = None
@@ -100,6 +105,8 @@ async def lifespan(app: FastAPI):
         global_scan.stop()
     if global_agent:
         global_agent.stop()
+    if global_monitor:
+        global_monitor.stop()
     if loop:
         loop.stop()
     if live:
