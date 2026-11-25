@@ -19,7 +19,15 @@ const time = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "–";
 const clock = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }) : "–";
-const age = (s: number | null | undefined) => (s == null ? "" : s < 90 ? "just now" : `${Math.round(s / 60)} min old`);
+const age = (s: number | null | undefined) => (s == null ? "" : s < 90 ? `${Math.round(s)} s old` : `${Math.round(s / 60)} min old`);
+export const CLOSE_BODY = "Closes now at the live price: a buy sells at the bid, a sell buys at the ask, plus slippage. "
+  + "If no fresh price can be read, it fills at the next 1-minute bar's open instead. Exits are never blocked.";
+
+/** What a close did, in one toast: filled now at a price, or waiting for the next bar. */
+export function closeToast(o: GlobalOrder | null, symbol: string): [string, string] {
+  if (o?.state === "filled" && o.params.price != null) return [`Closed ${symbol} at ${px(o.params.price)}`, `Live price ${px(o.params.quote)} when you clicked.`];
+  return [`Closing ${symbol}`, "No fresh price right now: it fills at the next 1-minute bar's open, usually within 2 minutes."];
+}
 
 function UsdPnl({ v, plain = false }: { v: number | null | undefined; plain?: boolean }) {
   if (v == null) return <span className="num text-subtle">–</span>;
@@ -163,6 +171,7 @@ export function GlobalPaper() {
   const [ticket, setTicket] = useState<GlobalOrder | null>(null);
   const [form, setForm] = useState({ side: "buy", stop: "", target: "", lots: "", why: "" });
   const [limits, setLimits] = useState<Record<string, string>>({});
+  const [closing, setClosing] = useState<string | null>(null);
   const [openTrade, setOpenTrade] = useState<string | null>(null);
 
   useEffect(() => {
@@ -201,7 +210,7 @@ export function GlobalPaper() {
   async function killSwitch() {
     const ok = await confirm({
       title: "Activate the XAUUSD kill switch?",
-      body: "Cancels every ticket and working entry, closes every open global position at the next bar, and blocks new entries until the next trading day (17:00 New York, 03:30 IST in winter). NSE paper and live are not touched: they have their own switch.",
+      body: "Cancels every ticket and working entry, closes every open global position (at the live price, or the next bar's open without one), and blocks new entries until the next trading day (17:00 New York, 03:30 IST in winter). NSE paper and live are not touched: they have their own switch.",
       confirm: "Activate kill switch",
     });
     if (ok && (await post("/global/paper/kill-switch"))) toast("success", "Kill switch on", "Orders cancelled, positions closing, no new entries this trading day.");
@@ -261,10 +270,13 @@ export function GlobalPaper() {
                         <td className="r text-down/90">{px(t.stop)}</td><td className="r text-up/90">{t.target != null ? px(t.target) : "–"}</td>
                         <td className="r"><UsdPnl v={t.unrealized} /></td><td className="text-muted">{time(t.entry_ts)}</td>
                         <td className="text-right">
-                          <button onClick={async () => {
-                            if (!(await confirm({ title: `Close ${t.symbol}?`, body: "An exit fills at the next 1-minute bar's open, at the bid for a long and the ask for a short. Exits are never blocked.", confirm: "Close position", tone: "primary" }))) return;
-                            if (await post(`/global/paper/positions/${t.id}/close`)) toast("success", `Closing ${t.symbol}`, "Exit order working.");
-                          }} className="btn btn-sm">Close</button>
+                          <button disabled={t.closing || closing === t.id} onClick={async () => {
+                            if (!(await confirm({ title: `Close ${t.symbol}?`, body: t.mode === "demo" ? "Closes at your MT5 demo account at the market, now." : CLOSE_BODY, confirm: "Close position", tone: "primary" }))) return;
+                            setClosing(t.id);
+                            const o = await post<GlobalOrder>(`/global/paper/positions/${t.id}/close`);
+                            setClosing(null);
+                            if (o) toast("success", ...closeToast(o, t.symbol));
+                          }} className="btn btn-sm">{t.closing || closing === t.id ? "Closing…" : "Close"}</button>
                           <a href={`/global/monitor?trade=${t.id}`} className="btn btn-sm ml-1.5">Monitor</a>
                         </td>
                       </tr>

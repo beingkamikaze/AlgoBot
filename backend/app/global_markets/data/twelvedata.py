@@ -66,3 +66,21 @@ def fetch(symbol: str, tf: str, api_key: str, outputsize: int = 1500) -> list[Ba
     except (httpx.HTTPError, ValueError) as e:
         raise TwelveDataError(f"no answer ({type(e).__name__})")
     return parse(doc, tf, now.timestamp())
+
+
+PRICE_URL = "https://api.twelvedata.com/price"
+
+
+def price(symbol: str, api_key: str) -> float:
+    """The latest price, one call. Used when you close a paper trade, so the exit fills at the market you saw."""
+    now = dt.datetime.now(dt.timezone.utc)
+    _spend(now)
+    try:
+        r = httpx.get(PRICE_URL, params={"symbol": SYMBOLS[symbol]}, headers={"Authorization": f"apikey {api_key}"}, timeout=8)
+        doc = r.json()
+    except (httpx.HTTPError, ValueError) as e:
+        raise TwelveDataError(f"no answer ({type(e).__name__})")
+    try:
+        return float(doc["price"])
+    except (KeyError, TypeError, ValueError):
+        raise TwelveDataError(str(doc.get("message") or "unexpected answer")[:200]) from None

@@ -294,3 +294,41 @@ def test_paper_does_not_load_nse_trading_code():
 
 def test_costs_model_is_the_backtests():
     assert paper.COSTS == CostModel() and paper.QUOTES.spread == 0.60
+
+
+def _open_buy(world):
+    fdb, mkt = world
+    _flat(mkt, at(13, 50), 10, 4000.0)
+    o = paper.propose("u1", symbol="XAUUSD", side="buy", stop=3990, target=4020)
+    mkt.now = at(14, 0, 10)
+    paper.approve("u1", o["id"])
+    _flat(mkt, at(14, 0), 5, 4000.0)
+    mkt.now = at(14, 5, 20)
+    paper.tick()
+    return fdb.tables["global_trades"][0]
+
+
+def test_a_close_fills_at_once_at_the_live_price(world, monkeypatch):
+    fdb, mkt = world
+    t = _open_buy(world)
+    monkeypatch.setattr(paper.feed, "quote", lambda s, src=None: paper.feed.Quote(4008.0, mkt.now.timestamp() - 2, "test"))
+    o = paper.close_position("u1", t["id"])
+    assert o["state"] == "filled" and o["params"]["fill_from"] == "live price" and o["params"]["quote"] == 4008.0
+    t = fdb.tables["global_trades"][0]
+    assert t["exit"] == round(4008.0 - 0.3 - 0.1, 2) and t["exit_ts"].startswith("2026-11-03T14:05:20")   # sold at the bid
+    assert t["exit_reason"] == "manual" and mkt.closed == [t["id"]]
+    assert paper.tick()["closed"] == 0                                      # nothing left for the loop to fill
+
+
+def test_a_close_without_a_fresh_price_waits_for_the_next_bar(world, monkeypatch):
+    fdb, mkt = world
+    t = _open_buy(world)
+    monkeypatch.setattr(paper.feed, "quote", lambda s, src=None: paper.feed.Quote(4008.0, mkt.now.timestamp() - 60, "test"))
+    assert paper.close_position("u1", t["id"])["state"] == "working"         # a minute-old price is not used
+    assert paper.overview("u1")["positions"][0]["closing"] is True          # the page shows "Closing…", not a live button
+    with pytest.raises(paper.PaperError, match="already working"):
+        paper.close_position("u1", t["id"])
+    _flat(mkt, at(14, 6), 2, 4003.0)
+    mkt.now = at(14, 8)
+    paper.tick()
+    assert fdb.tables["global_trades"][0]["exit"] == round(4003.0 - 0.3 - 0.1, 2)

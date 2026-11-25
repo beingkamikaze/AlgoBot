@@ -113,6 +113,7 @@ def test_an_alert_is_raised_when_health_gets_worse_and_reaches_telegram(fdb, mon
     monkeypatch.setattr(monitor, "listeners", [lambda *a: 1 / 0, lambda uid, al: got.append((uid, al))])
     first = monitor.analyze_trade("u1", "t1", NOW, bars=tuple(market(NOW)[k] for k in ("1m", "5m", "15m")))
     assert first["health"] == "on track" and first["alerts"] == [] and first["unrealized"] is not None
+    assert first["trade"]["closing"] is False and first["progress"]["price_age_seconds"] >= 0
     e = macro.Event("US jobs report (NFP)", NOW + dt.timedelta(minutes=5), "the jobs report often moves gold")
     monkeypatch.setattr(macro, "near", lambda now: [e])
     again = monitor.analyze_trade("u1", "t1", NOW, bars=tuple(market(NOW)[k] for k in ("1m", "5m", "15m")))

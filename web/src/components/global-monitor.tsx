@@ -4,13 +4,14 @@ import type { Session } from "@supabase/supabase-js";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { CLOSE_BODY, closeToast } from "@/components/global-paper";
 import { PriceChart, type ChartLevel, type ChartMarker } from "@/components/price-chart";
 import { useFeedback } from "@/components/ui/feedback";
 import { IconAlert, IconBell, IconPower, IconRadio } from "@/components/ui/icons";
 import {
   Badge, Check, Empty, Notice, PageHeader, PageLoading, Panel, RValue, Side, SignInRequired, Skeleton, cx, px,
 } from "@/components/ui/kit";
-import { api, type GlobalChartData, type GlobalMonitorSummary, type GlobalMonitorTrade, type MonitorHealth } from "@/lib/api";
+import { api, type GlobalChartData, type GlobalMonitorSummary, type GlobalOrder, type GlobalMonitorTrade, type MonitorHealth } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { C } from "@/lib/theme";
 
@@ -54,6 +55,7 @@ export function GlobalMonitor() {
   const [chart, setChart] = useState<GlobalChartData | null>(null);
   const [tf, setTf] = useState<"1m" | "5m">("1m");
   const [error, setError] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
 
   useEffect(() => {
     sb?.auth.getSession().then(({ data }) => setSession(data.session));
@@ -119,11 +121,14 @@ export function GlobalMonitor() {
     if (!m) return;
     const demo = m.trade.mode === "demo";
     if (!(await confirm({ title: `Close ${m.trade.symbol} ${m.trade.side}?`, tone: "primary", confirm: demo ? "Close at MT5 demo" : "Close position",
-      body: demo ? "Closes at your MT5 demo account at the market, now." : "A paper exit fills at the next 1-minute bar's open. Exits are never blocked." }))) return;
+      body: demo ? "Closes at your MT5 demo account at the market, now." : CLOSE_BODY }))) return;
+    setClosing(true);
     try {
-      await api(`/global/paper/positions/${m.trade.id}/close`, { method: "POST" });
-      toast("success", `Closing ${m.trade.symbol}`);
+      const o = await api<GlobalOrder>(`/global/paper/positions/${m.trade.id}/close`, { method: "POST" });
+      toast("success", ...closeToast(o, m.trade.symbol));
+      await loadOne(m.trade.id);
     } catch (e) { toast("error", "Could not close", (e as Error).message); }
+    finally { setClosing(false); }
   }
 
   if (session === undefined) return <PageLoading />;
@@ -190,7 +195,8 @@ export function GlobalMonitor() {
                   {m.progress && (
                     <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-md border border-line bg-line text-xs">
                       {([["Now", <RValue key="n" v={m.progress.r} />], ["Best", <RValue key="b" v={m.progress.mfe_r} />], ["Worst", <RValue key="w" v={m.progress.mae_r} />],
-                        ["Unrealized", <span key="u" className={(m.unrealized ?? 0) >= 0 ? "text-up" : "text-down"}>{usd(m.unrealized)}</span>],
+                        ["Unrealized", <span key="u"><span className={(m.unrealized ?? 0) >= 0 ? "text-up" : "text-down"}>{usd(m.unrealized)}</span>
+                          {m.progress.price_age_seconds != null && <span className="block text-2xs text-subtle">price {m.progress.price_age_seconds < 90 ? `${m.progress.price_age_seconds} s` : `${Math.round(m.progress.price_age_seconds / 60)} min`} old</span>}</span>],
                         ["In trade", `${m.time?.minutes_in ?? 0} min`], ["To flat-by", m.time?.minutes_to_flat != null ? `${m.time.minutes_to_flat} min` : "–"]] as [string, React.ReactNode][]).map(([k, v]) => (
                         <div key={k} className="bg-surface px-2.5 py-1.5"><dt className="eyebrow">{k}</dt><dd className="num mt-0.5 text-[13px]">{v}</dd></div>
                       ))}
@@ -203,7 +209,10 @@ export function GlobalMonitor() {
                       <p className="mt-1 text-2xs text-subtle">Code cannot check the agent&apos;s own words: compare them with the chart yourself.</p>
                     </div>
                   )}
-                  {!m.trade.exit_ts && <button onClick={close} className="btn btn-sm w-full"><IconPower size={13} />Close this position</button>}
+                  {!m.trade.exit_ts && (
+                    <button onClick={close} disabled={closing || m.trade.closing} className="btn btn-sm w-full">
+                      <IconPower size={13} />{closing ? "Closing…" : m.trade.closing ? "Closing at the next 1-minute bar…" : "Close this position"}
+                    </button>)}
                 </div>
               )}
             </Panel>

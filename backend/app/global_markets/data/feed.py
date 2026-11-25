@@ -130,3 +130,34 @@ def futures(symbol: str, tf: str) -> Series:
 
 def series(symbol: str, tf: str, source: str | None = None) -> Series:
     return spot(symbol, tf) if (source or default_source()) == "spot" else futures(symbol, tf)
+
+
+QUOTE_TTL = 5               # seconds: two clicks in a row share one call
+FRESH_BAR = 90              # seconds: a futures bar this recent counts as the live price
+
+
+@dataclass
+class Quote:
+    price: float
+    at: float               # unix seconds the price was read
+    provider: str
+
+
+def quote(symbol: str, source: str | None = None) -> Quote | None:
+    """The price right now, or None when there is no fresh one. Spot asks Twelve Data for its latest price (one call);
+    futures use Yahoo's newest 1-minute bar when it is recent."""
+    if (source or default_source()) == "spot":
+        key = get_settings().twelvedata_api_key
+        if not key:
+            return None
+
+        def load():
+            try:
+                return Quote(twelvedata.price(symbol, key), time.time(), "Twelve Data")
+            except twelvedata.TwelveDataError:
+                return None
+        return _cached(f"quote|{symbol}", QUOTE_TTL, load)
+    bars = futures(symbol, "1m").bars
+    if bars and time.time() - bars[-1].t <= FRESH_BAR:
+        return Quote(bars[-1].c, time.time(), "Yahoo GC=F")
+    return None

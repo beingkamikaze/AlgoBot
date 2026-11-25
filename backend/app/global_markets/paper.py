@@ -14,6 +14,7 @@ import datetime as dt
 import logging
 import threading
 import time
+from dataclasses import dataclass
 
 from app.db import db, eq
 from app.global_markets import journal, macro, news, signals
@@ -33,6 +34,7 @@ EXPIRE_SECONDS = 10 * 60
 STARTING_CAPITAL = 10_000.0      # dollars: about your NSE paper capital
 TICKET_MINUTES = 15             # an unconfirmed ticket expires: its price has moved on
 STALE_EXIT_SECONDS = 45 * 60    # no bars for this long after flat-by, with the market shut: close at the last price
+QUOTE_MAX_AGE = 15             # seconds: a paper close fills at once only on a price this fresh
 _lock = threading.RLock()
 
 
@@ -345,7 +347,8 @@ def cancel(user_id: str, order_id: str) -> dict:
 
 
 def close_position(user_id: str, trade_id: str, reason: str = "manual", now: dt.datetime | None = None) -> dict:
-    """An exit for an open trade: never blocked; it fills at the next bar's open."""
+    """An exit for an open trade: never blocked. It fills at once at the live price, or at the next 1-minute bar's open
+    when no fresh price can be read. An MT5 demo trade is closed at the broker."""
     now = now or _now()
     with _lock:
         d = db()
@@ -368,13 +371,39 @@ def close_position(user_id: str, trade_id: str, reason: str = "manual", now: dt.
             except mt5.Mt5Error as e:
                 if not e.ambiguous:
                     raise PaperError(f"MT5 did not close it: {e}") from None
+        fill = None if t["mode"] == "demo" else _fill_now(t, reason, now)
+        if fill is not None:
+            params.update(fill_from="live price", price=fill.price, quote=fill.quote)
         o = d.insert("global_orders", {"user_id": user_id, "symbol": t["symbol"], "side": params["side"], "lots": t["lots"],
-                                       "leg": "exit", "state": "working", "params": params, "trade_id": trade_id,
-                                       "approved_at": _iso(now),
+                                       "leg": "exit", "state": "filled" if fill else "working", "params": params,
+                                       "trade_id": trade_id, "approved_at": _iso(now),
                                        "risk_verdict": {"verdict": "PASS", "reasons": [], "warnings": ["exits are never blocked"],
                                                         "numbers": {}}})[0]
-        audit(user_id, "close_position", {"trade_id": trade_id, "reason": reason})
+        audit(user_id, "close_position", {"trade_id": trade_id, "reason": reason,
+                                          "filled": "now at the live price" if fill else "at the next 1-minute bar's open"})
+        if fill is not None:
+            _close(d, t, fill.fill, dict(t["entry_context"] or {}))
         return o
+
+
+@dataclass(frozen=True)
+class _NowFill:
+    fill: sim.Fill
+    price: float
+    quote: float
+
+
+def _fill_now(t: dict, reason: str, now: dt.datetime) -> _NowFill | None:
+    """A paper close at the price right now, like a market order: closing a buy sells at the bid, closing a sell buys at
+    the ask, plus the usual slippage. With no fresh price it returns None and the close waits for the next bar's open."""
+    q = feed.quote(t["symbol"], t["price_source"])
+    if q is None or now.timestamp() - q.at > QUOTE_MAX_AGE:
+        return None
+    ctx = t["entry_context"] or {}
+    half = float(ctx.get("spread") or QUOTES.spread) / 2
+    long = t["side"] == "buy"
+    px = round(q.price - half - QUOTES.slippage if long else q.price + half + QUOTES.slippage, 2)
+    return _NowFill(sim.Fill(int(now.timestamp()), px, reason, QUOTES.slippage), px, q.price)
 
 
 def kill_switch(user_id: str, now: dt.datetime | None = None) -> dict:
@@ -561,6 +590,7 @@ def overview(user_id: str) -> dict:
     orders = d.select("global_orders", {"user_id": eq(user_id)}, order="created_at.desc", limit=50)
     lim = Limits.from_row(lim_row)
     positions = []
+    exiting = {o["trade_id"] for o in orders if o.get("leg") == "exit" and o["state"] == "working"}
     for t in raw["trades"]:
         if t.get("exit_ts"):
             continue
@@ -570,7 +600,7 @@ def overview(user_id: str) -> dict:
         close_at = (px.last - QUOTES.half if long else px.last + QUOTES.half) if px.last is not None else None
         unreal = None if close_at is None else round(((close_at - float(t["entry"])) if long else (float(t["entry"]) - close_at))
                                                      * float(t["units"]), 2)
-        positions.append({**t, "last": px.last, "price_age_seconds": round(px.age_seconds) if px.age_seconds is not None else None,
+        positions.append({**t, "closing": t["id"] in exiting, "last": px.last, "price_age_seconds": round(px.age_seconds) if px.age_seconds is not None else None,
                           "unrealized": unreal, "stop": ctx.get("stop"), "target": ctx.get("target")})
     closed = sorted((t for t in raw["trades"] if t.get("exit_ts")), key=lambda t: t.get("exit_ts"), reverse=True)[:100]
     m = market_status(now)

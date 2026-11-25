@@ -144,7 +144,8 @@ def analyze(s: Setup, m1: list[Bar], m5: list[Bar], m15: list[Bar], now: dt.date
     lo = min((b.l for b in since), default=price)
     best, worst = (hi, lo) if s.d > 0 else (lo, hi)
     r_now = r_of(price, s)
-    progress = {"price": round(price, 2), "r": _n(r_now), "mfe_r": _n(r_of(best, s)), "mae_r": _n(r_of(worst, s))}
+    progress = {"price": round(price, 2), "r": _n(r_now), "mfe_r": _n(r_of(best, s)), "mae_r": _n(r_of(worst, s)),
+                "price_age_seconds": max(0, int(now.timestamp() - (m1[-1].t + 60)))}
     minutes_in = max(0, int((now.timestamp() - s.entry_t) // 60))
     minutes_left = int((s.flat_by - now).total_seconds() // 60) if s.flat_by else None
     lv = signals.levels(m1, now)
@@ -333,7 +334,9 @@ def analyze_trade(user_id: str, trade_id: str, now: dt.datetime | None = None, b
         "trade": {"id": t["id"], "mode": t["mode"], "symbol": t["symbol"], "side": t["side"], "lots": t["lots"],
                   "units": t["units"], "entry": t["entry"], "entry_ts": t["entry_ts"], "exit_ts": t.get("exit_ts"),
                   "price_source": t["price_source"], "strategy": s.strategy,
-                  "strategy_name": STRATEGY_NAMES.get(s.strategy or "", None), "why": (t.get("entry_context") or {}).get("why")},
+                  "strategy_name": STRATEGY_NAMES.get(s.strategy or "", None), "why": (t.get("entry_context") or {}).get("why"),
+                  "closing": bool(not t.get("exit_ts") and db().select(
+                      "global_orders", {"trade_id": eq(t["id"]), "leg": eq("exit"), "state": eq("working")}))},
         "direction": "long" if s.d > 0 else "short",
         "levels": {"entry": s.entry, "stop": s.stop, "target": s.target, "entry_t": s.entry_t},
         "agent_wrong_if": s.wrong_if,

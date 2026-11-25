@@ -127,6 +127,7 @@ export type GlobalOrder = {
     units: number; limit?: number; stop?: number; target?: number | null; source: "spot" | "futures"; last_price?: number;
     price_age_seconds?: number; spread?: number; slippage?: number; why?: string; reason?: string; expired_because?: string;
     override?: { reasons: string[]; note: string }; card?: GlobalCard; broker?: "mt5"; mt5_error?: string;
+    fill_from?: "live price"; price?: number; quote?: number;
   };
   risk_verdict: GlobalVerdict | null; approved_at: string | null; created_at: string;
 };
@@ -138,6 +139,7 @@ export type GlobalTrade = {
   rules_followed: boolean | null; trading_day: string | null;
   entry_context: { stop?: number; target?: number | null; why?: string; override?: unknown; card?: GlobalCard } | null;
   last?: number | null; price_age_seconds?: number | null; unrealized?: number | null; stop?: number; target?: number | null;
+  closing?: boolean;
 };
 
 export type GlobalSignal = {
@@ -218,12 +220,12 @@ export type GlobalLimits = {
 export type GlobalMonitorTrade = {
   trade: { id: string; mode: "paper" | "live" | "demo"; symbol: string; side: "buy" | "sell"; lots: number; units: number; entry: number;
            entry_ts: string; exit_ts: string | null; price_source: "spot" | "futures"; strategy: string | null; strategy_name: string | null;
-           why: string | null };
+           why: string | null; closing: boolean };
   direction: "long" | "short";
   levels: { entry: number; stop: number; target: number | null; entry_t: number };
   agent_wrong_if: string | null; flat_by: string | null;
   health: MonitorHealth; headline: string;
-  progress?: { price: number; r: number | null; mfe_r: number | null; mae_r: number | null };
+  progress?: { price: number; r: number | null; mfe_r: number | null; mae_r: number | null; price_age_seconds?: number };
   time?: { minutes_in: number; minutes_to_flat: number | null };
   checks: MonitorCheck[]; sr: { price: number; label: string; kind: "support" | "resistance" }[];
   unrealized?: number; alerts: MonitorAlert[]; as_of: string;
