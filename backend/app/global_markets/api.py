@@ -311,8 +311,10 @@ async def agent_desk(user: User = Depends(current_user)) -> dict:
     """The agent's latest looks (trade ideas and passes), what it is doing now, and its forward record."""
     ideas = await _desk(desk.recent)
     taken = await _desk(_taken, user.id)
+    lim = await _desk(lambda: (db().select("global_limits", {"user_id": eq(user.id)}) or [None])[0])
     for r in ideas:
         r["your_ticket"] = taken.get(r["id"])
+        r["estimate"] = paper.idea_estimate(r, lim)
     now = dt.datetime.now(dt.timezone.utc)
     m = market_status(now)
     w = day_window(m.trading_day) if m.is_open else None

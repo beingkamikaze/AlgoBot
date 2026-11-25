@@ -18,6 +18,9 @@ from app.ai.grounding import ungrounded
 
 SETUPS = ["breakout", "pullback", "reversal", "range edge", "other"]
 MIN_REWARD_RISK = 1.5
+# numbers that name how the facts were measured, not prices: "last 12 bars", "EMA 20 / 50", "RSI 14", "5m / 15m / 1h"
+DEFINITIONS = {"recent_bars": 12, "ema": [20, 50], "rsi": 14, "atr": 14, "timeframes": ["1m", "5m", "15m", "1h"],
+               "timeframe_minutes": [1, 5, 15, 60]}
 STOP_ATR = (0.8, 4.0)
 
 STRATEGIST = """You are the strategist on a paper-trading desk for gold (XAUUSD). You are shown a snapshot of the live market
@@ -112,7 +115,7 @@ def rule_check(facts: dict, p: dict) -> list[str]:
             bad.append(f"the stop is {n['risk']:.2f} away, more than {hi:g} typical 5-minute moves ({atr:.2f})")
     if n["reward_risk"] is not None and n["reward_risk"] < MIN_REWARD_RISK:
         bad.append(f"reward is only {n['reward_risk']:.2f} times the risk; at least {MIN_REWARD_RISK:g} is needed")
-    allowed = {"facts": facts, "plan": n}
+    allowed = {"facts": facts, "plan": n, "definitions": DEFINITIONS}
     wrong = ungrounded(" ".join([*p["why"], p["wrong_if"]]), allowed)
     if wrong:
         bad.append("the reasons quote numbers that are not in the facts: " + ", ".join(f"{x:g}" for x in wrong[:4]))

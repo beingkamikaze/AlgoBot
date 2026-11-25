@@ -135,6 +135,18 @@ def usd(x: float) -> str:
     return f"-${-x:,.2f}" if x < 0 else f"${x:,.2f}"
 
 
+def money(inst: GlobalInstrument, lots: float, entry: float, stop: float, target: float | None,
+          costs: CostModel = CostModel()) -> dict:
+    """What a trade of this size loses at its stop and makes at its target, in dollars, after the assumed slippage and
+    commission (the spread is already in the entry and exit prices)."""
+    units = inst.units(lots)
+    extra = units * costs.round_trip_per_unit(inst.contract_size)
+    out = {"units": units, "loss_at_stop": round(units * abs(entry - stop) + extra, 2), "costs": round(extra, 2)}
+    if target is not None:
+        out["gain_at_target"] = round(units * abs(target - entry) - extra, 2)
+    return out
+
+
 def max_lots(inst: GlobalInstrument, entry: float, stop: float, lim: Limits, costs: CostModel = CostModel()) -> float:
     """The most lots inside both your max loss per trade and your position cap. 0 means even the smallest lot is too big."""
     by_risk = inst.lots_for_risk(lim.max_loss_per_trade, abs(entry - stop), costs.round_trip_per_unit(inst.contract_size))
@@ -197,6 +209,7 @@ def check(o: OrderRequest, lim: Limits, st: AccountState, now: dt.datetime, pric
     if o.target is not None:
         rr = abs(o.target - o.limit) / risk_unit
         nums["reward_risk"] = round(rr, 2)
+        nums["gain_at_target"] = money(inst, o.lots, o.limit, o.stop, o.target, costs)["gain_at_target"]
         if rr < 1:
             warn.append(f"reward:risk is only {rr:.2f}")
 

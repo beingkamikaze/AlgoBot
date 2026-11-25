@@ -131,14 +131,23 @@ def _chats(user_id: str | None = None) -> list[int]:
 
 # ---------------------------------------------------------------- what the messages say
 
-def idea_text(idea: dict) -> str:
+def _money_line(e: dict | None) -> list[str]:
+    if not e:
+        return []
+    if not e.get("lots"):
+        return [f"<b>Size:</b> {esc(e.get('note') or 'too big for your limits')}"]
+    return [f"<b>If taken now:</b> {e['lots']:g} lots · <b>lose {_usd(e['loss_at_stop'])}</b> at the stop · "
+            f"<b>make {_usd(e['gain_at_target'])}</b> at the target (after costs)"]
+
+
+def idea_text(idea: dict, estimate: dict | None = None) -> str:
     p = idea.get("proposal") or {}
     n = p.get("plan") or {}
     r = idea.get("review") or {}
     late = idea.get("price_source") == "futures"
     lines = [f"<b>Gold agent idea: {esc(idea['side']).upper()} XAUUSD</b> ({esc(idea.get('setup') or 'other')})",
              f"Price seen {n.get('entry')} · stop {n.get('stop')} · target {n.get('target')} · reward:risk "
-             f"{n.get('reward_risk')} : 1", "", "<b>Why</b>"]
+             f"{n.get('reward_risk')} : 1", *_money_line(estimate), "", "<b>Why</b>"]
     lines += [f"• {esc(w)}" for w in p.get("why") or []]
     if p.get("wrong_if"):
         lines.append(f"Wrong if: {esc(p['wrong_if'])}")
@@ -156,7 +165,8 @@ def ticket_text(o: dict) -> str:
     nums = v.get("numbers") or {}
     lines = [f"<b>Paper ticket: {esc(o['side']).upper()} {o['lots']:g} lots {esc(o['symbol'])}</b>",
              f"Limit {p.get('limit')} · stop {p.get('stop')} · target {p.get('target')}",
-             f"Max loss {_usd(nums.get('max_loss'))} at the stop, including costs", "",
+             f"<b>Lose {_usd(nums.get('max_loss'))}</b> at the stop · <b>make {_usd(nums.get('gain_at_target'))}</b> at the "
+             "target (after costs)", "",
              f"Risk check: <b>{esc(v.get('verdict'))}</b>"]
     lines += [f"• {esc(x)}" for x in v.get("reasons") or []]
     lines += [f"• note: {esc(x)}" for x in v.get("warnings") or []]
@@ -182,7 +192,8 @@ def _sure_text(o: dict, route: str = "paper") -> str:
     p, nums = o.get("params") or {}, (o.get("risk_verdict") or {}).get("numbers") or {}
     where = "to your <b>MT5 demo</b> account" if route == "mt5_demo" else "on paper"
     return (f"<b>Confirm {where}?</b>\n{esc(o['side']).upper()} {o['lots']:g} lots {esc(o['symbol'])}, limit {p.get('limit')}, "
-            f"stop {p.get('stop')}, target {p.get('target')}.\nMax loss {_usd(nums.get('max_loss'))}. The risk check runs "
+            f"stop {p.get('stop')}, target {p.get('target')}.\nLose {_usd(nums.get('max_loss'))} at the stop, make "
+            f"{_usd(nums.get('gain_at_target'))} at the target. The risk check runs "
             "again on a fresh price when you say yes.")
 
 
@@ -294,8 +305,10 @@ def on_idea(idea: dict) -> None:
     """The agent stored an idea. Live trade ideas go to every linked chat (the agent is not tied to one account)."""
     if idea.get("kind") != "trade" or idea.get("state") != "new" or not configured():
         return
-    for chat in _chats():
-        _outbox.put((chat, idea_text(idea), [[("Make paper ticket", f"t:{idea['id']}"), ("Skip", f"s:{idea['id']}")]]))
+    for row in db().select(TABLE, {"chat_id": "not.is.null"}):            # sized with each person's own limits
+        lim = (db().select("global_limits", {"user_id": eq(row["user_id"])}) or [None])[0]
+        _outbox.put((int(row["chat_id"]), idea_text(idea, paper.idea_estimate(idea, lim)),
+                     [[("Make paper ticket", f"t:{idea['id']}"), ("Skip", f"s:{idea['id']}")]]))
 
 
 def on_paper(kind: str, user_id: str, data: dict) -> None:

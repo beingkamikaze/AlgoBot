@@ -55,6 +55,18 @@ function IdeaCard({ idea, now, onTicket }: { idea: AgentIdea; now: number; onTic
           ))}
         </dl>
       )}
+      {idea.estimate && (
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-line px-3 py-2 text-[12.5px]">
+          {idea.estimate.lots > 0 ? (
+            <>
+              <span className="text-muted">If taken now: <span className="num text-fg">{idea.estimate.lots} lots</span></span>
+              <span className="text-muted">lose <span className="num font-semibold text-down">${idea.estimate.loss_at_stop?.toFixed(2)}</span> at the stop</span>
+              <span className="text-muted">make <span className="num font-semibold text-up">${idea.estimate.gain_at_target?.toFixed(2)}</span> at the target</span>
+              <span className="text-2xs text-subtle">after costs, sized from your ${idea.estimate.max_loss_limit} max loss; the ticket prices it again</span>
+            </>
+          ) : <span className="text-warn">{idea.estimate.note}</span>}
+        </div>
+      )}
       <div className="space-y-2 px-3 py-2.5 text-[12.5px]">
         <p className="text-xs text-muted">Looked because: {idea.triggers.join("; ")}</p>
         <ul className="list-disc space-y-0.5 pl-4 text-fg">{p.why.map((w) => <li key={w}>{w}</li>)}</ul>

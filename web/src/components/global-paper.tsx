@@ -81,9 +81,9 @@ export function Ticket({ order, onDone }: { order: GlobalOrder; onDone: (o: Glob
           <p className={`flex items-center gap-1.5 font-semibold ${pass ? "text-up" : "text-down"}`}><IconShield size={14} /> Risk check: {v.verdict}</p>
           {v.numbers.max_loss != null && (
             <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs sm:grid-cols-4">
-              {([["Max loss", usd(v.numbers.max_loss)], ["Slippage at stop", usd(v.numbers.costs_at_stop)], ["Position", usd(v.numbers.value)],
-                 ["Reward : risk", v.numbers.reward_risk != null ? String(v.numbers.reward_risk) : "–"]] as const).map(([k, n]) => (
-                <div key={k}><dt className="text-subtle">{k}</dt><dd className="num text-fg">{n}</dd></div>
+              {([["Lose at stop", usd(v.numbers.max_loss), "text-down"], ["Make at target", v.numbers.gain_at_target != null ? usd(v.numbers.gain_at_target) : "–", "text-up"],
+                 ["Reward : risk", v.numbers.reward_risk != null ? String(v.numbers.reward_risk) : "–", "text-fg"], ["Position", usd(v.numbers.value), "text-fg"]] as const).map(([k, n, ink]) => (
+                <div key={k}><dt className="text-subtle">{k}</dt><dd className={`num ${ink}`}>{n}</dd></div>
               ))}
             </dl>
           )}

@@ -117,7 +117,7 @@ export type Me = { id: string; email: string | null; mode: string; paper_startin
 /** Calls the Python backend, sending the Supabase session token when there is one. */
 export type GlobalVerdict = {
   verdict: "PASS" | "BLOCK"; reasons: string[]; warnings: string[]; hard: string[]; overridable: boolean; overridden?: boolean;
-  numbers: { units?: number; value?: number; risk_per_unit?: number; max_loss?: number; costs_at_stop?: number; reward_risk?: number };
+  numbers: { units?: number; value?: number; risk_per_unit?: number; max_loss?: number; costs_at_stop?: number; reward_risk?: number; gain_at_target?: number };
 };
 
 export type GlobalOrder = {
@@ -167,6 +167,8 @@ export type AgentIdea = {
   state: "new" | "vetoed" | "expired" | "passed"; expires_at: string | null; created_at: string; model: string | null;
   outcome: { status: string; exit?: number; reason?: string; r?: number; exit_at?: string; note?: string } | null;
   your_ticket?: GlobalOrder["state"] | null; facts?: Record<string, unknown>;
+  /** sized the way a ticket would be, from your max loss per trade, at the price the agent saw */
+  estimate?: { lots: number; entry?: number; loss_at_stop?: number; gain_at_target?: number; costs?: number; max_loss_limit?: number; note?: string } | null;
 };
 export type AgentDesk = {
   ideas: AgentIdea[]; market_open: boolean; in_window: boolean; enabled: boolean; ai_ready: boolean; looks_per_day: number;

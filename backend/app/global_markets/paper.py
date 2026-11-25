@@ -23,7 +23,7 @@ from app.global_markets.costs import DEFAULT_SPREAD, CostModel
 from app.global_markets.data import feed
 from app.global_markets.instruments import resolve
 from app.global_markets.risk import (AccountState, Limits, OpenPosition, OrderRequest, PriceInfo, check, is_hard,
-                                     max_lots)
+                                     max_lots, money)
 
 log = logging.getLogger("global.paper")
 COSTS = CostModel()
@@ -178,6 +178,26 @@ def account_state(user_id: str, account: dict, now: dt.datetime | None = None) -
 
 
 # ---------------------------------------------------------------- tickets
+
+def idea_estimate(idea: dict, limits_row: dict | None) -> dict | None:
+    """What an agent idea would risk and make if you took it now at the price it saw, sized the way the ticket would be: the
+    most lots inside your max loss per trade and position cap, after slippage and commission. The ticket prices it again."""
+    if idea.get("kind") != "trade" or idea.get("stop") is None or idea.get("target") is None:
+        return None
+    inst, lim = resolve(idea.get("symbol") or "XAUUSD"), Limits.from_row(limits_row or {})
+    long = idea["side"] == "buy"
+    entry = inst.round_price(float(idea["ref_price"]) + (QUOTES.half + ENTRY_BUFFER) * (1 if long else -1), up=long)
+    stop, target = float(idea["stop"]), float(idea["target"])
+    if not (stop < entry < target if long else target < entry < stop):
+        return {"lots": 0.0, "note": "the entry would already be past the stop or target"}
+    lots = max_lots(inst, entry, stop, lim, COSTS)
+    if lots <= 0:
+        return {"lots": 0.0, "note": f"the stop is too far for your max loss of ${lim.max_loss_per_trade:,.2f}: even the "
+                                     "smallest lot would lose more"}
+    m = money(inst, lots, entry, stop, target, COSTS)
+    return {"lots": lots, "entry": entry, "loss_at_stop": m["loss_at_stop"], "gain_at_target": m["gain_at_target"],
+            "costs": m["costs"], "max_loss_limit": lim.max_loss_per_trade}
+
 
 def _waiting_twin(d, user_id: str, params: dict) -> dict | None:
     since = _iso(_now() - dt.timedelta(minutes=TICKET_MINUTES))
