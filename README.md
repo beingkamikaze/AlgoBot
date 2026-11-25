@@ -225,7 +225,13 @@ webhooks need a paid TradingView plan and two-factor authentication on the Tradi
       accounts only, token required) and the app's client and broker (`broker.py`: lots converted to the broker's lot and
       rounded down, marketable limits sent as deals capped at the limit, an order tag so a lost answer is looked up instead
       of resent, plain-language refusals, reconciliation). `GET /api/global/mt5` shows the demo connection and the broker's
-      spread. Nothing places MT5 orders yet: wiring it into a live gold desk waits for the lawyer's answer
+      spread
+- [x] MT5 demo routing, built 25 Nov 2026 against the fake MT5 (`global_markets/mt5/desk.py`, migration `0011_mt5_demo.sql`):
+      on the XAUUSD paper page you choose where confirmed tickets go, Simulator or MT5 demo. MT5 demo keeps every step before
+      the broker (risk check, your confirmation on the web or Telegram, the check again) but allows no override; the stop
+      and target are held at the broker; a 10 s sync records the broker's real fills, exits, profit and charges as `demo`
+      trades, closes at flat-by, and names any difference between the app and MT5. Same daily limits and kill switch as
+      paper. Demo accounts only; never tested with a real terminal yet. Live gold waits for the lawyer's answer
 - First real number, a coin flip on 50 sessions of `GC=F` with a 2 ATR stop: -0.056R ± 0.071, in line with costs of 0.087R
 - Twelve Data has not been tried against the real service yet. Signals never trade by themselves
 

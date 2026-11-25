@@ -123,7 +123,9 @@ async def _paper(fn, *args, **kwargs):
     except DBError as e:
         msg = str(e)
         if "global_" in msg and ("does not exist" in msg or "schema cache" in msg or "404" in msg):
-            if "global_agent_ideas" in msg:
+            if "route" in msg or "global_trades_mode" in msg:
+                msg = "the MT5 demo columns are missing: run supabase/migrations/0011_mt5_demo.sql in the Supabase SQL editor"
+            elif "global_agent_ideas" in msg:
                 msg = "the agent table is missing: run supabase/migrations/0009_global_agent.sql in the Supabase SQL editor"
             elif "global_signals" in msg:
                 msg = "the live signals table is missing: run supabase/migrations/0008_global_signals.sql in the Supabase SQL editor"
@@ -178,6 +180,16 @@ async def paper_close(trade_id: str, user: User = Depends(current_user)) -> dict
 @router.post("/paper/kill-switch")
 async def paper_kill(user: User = Depends(current_user)) -> dict:
     return await _paper(paper.kill_switch, user.id)
+
+
+class Route(BaseModel):
+    route: str
+
+
+@router.put("/paper/route")
+async def paper_route(body: Route, user: User = Depends(current_user)) -> dict:
+    """Where your confirmed tickets go: the simulator ("paper") or the MT5 demo account ("mt5_demo")."""
+    return await _paper(paper.set_route, user.id, body.route)
 
 
 @router.put("/paper/limits")

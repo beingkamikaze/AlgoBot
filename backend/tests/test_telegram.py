@@ -121,7 +121,7 @@ def test_idea_to_trade_takes_three_taps_and_the_risk_check_runs_again(tg, both):
     assert tg.edits[-1][3] == [[("Yes, take it (paper)", f"y:{order['id']}"), ("No", f"r:{order['id']}")]]
     tap(f"y:{order['id']}", now=later)
     assert fdb.select("global_orders")[0]["state"] == "working"
-    assert "Confirmed (paper)" in tg.edits[-1][2] and tg.edits[-1][3] == []
+    assert "is working on paper" in tg.edits[-1][2] and tg.edits[-1][3] == []
     tap(f"y:{order['id']}", now=later)                                                  # a second yes does nothing
     assert "Not done" in tg.edits[-1][2] and len(fdb.select("global_orders")) == 1
 

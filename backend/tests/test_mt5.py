@@ -21,8 +21,12 @@ TOKEN = "t" * 32
 class LossyClient(TestClient):
     """The network between the app and the bridge. lose = "before" (never arrives) or "after" (arrives, answer lost)."""
     lose: str | None = None
+    lose_path: str | None = None          # only lose a request to this path (None: the next request, whatever it is)
 
     def request(self, method, url, **kw):
+        if self.lose and self.lose_path and not str(url).endswith(self.lose_path):
+            kw.pop("timeout", None)
+            return super().request(method, url, **kw)
         if self.lose == "before":
             self.lose = None
             raise httpx.ConnectError("connection refused")

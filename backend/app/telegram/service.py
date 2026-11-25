@@ -173,9 +173,15 @@ def _ticket_buttons(o: dict) -> list[list[tuple[str, str]]]:
     return [[("Reject", f"r:{o['id']}")]]
 
 
-def _sure_text(o: dict) -> str:
+def _route(user_id: str) -> str:
+    rows = db().select("global_accounts", {"user_id": eq(user_id)})
+    return (rows[0].get("route") if rows else None) or "paper"
+
+
+def _sure_text(o: dict, route: str = "paper") -> str:
     p, nums = o.get("params") or {}, (o.get("risk_verdict") or {}).get("numbers") or {}
-    return (f"<b>Confirm on paper?</b>\n{esc(o['side']).upper()} {o['lots']:g} lots {esc(o['symbol'])}, limit {p.get('limit')}, "
+    where = "to your <b>MT5 demo</b> account" if route == "mt5_demo" else "on paper"
+    return (f"<b>Confirm {where}?</b>\n{esc(o['side']).upper()} {o['lots']:g} lots {esc(o['symbol'])}, limit {p.get('limit')}, "
             f"stop {p.get('stop')}, target {p.get('target')}.\nMax loss {_usd(nums.get('max_loss'))}. The risk check runs "
             "again on a fresh price when you say yes.")
 
@@ -243,15 +249,21 @@ def _tap(q: dict, now: dt.datetime) -> None:
         elif action == "c":                                  # first tap on confirm: ask again
             o = _order(uid, ref)
             bot.answer(q["id"])
-            bot.edit(chat_id, mid, _sure_text(o), [[("Yes, take it (paper)", f"y:{ref}"), ("No", f"r:{ref}")]])
+            route = _route(uid)
+            yes = "Yes, send to MT5 demo" if route == "mt5_demo" else "Yes, take it (paper)"
+            bot.edit(chat_id, mid, _sure_text(o, route), [[(yes, f"y:{ref}"), ("No", f"r:{ref}")]])
         elif action == "y":                                  # your confirmation
             o = paper.approve(uid, ref, now=now)
             if o["state"] == "working":
                 p = o["params"]
+                where = "sent to your MT5 demo account" if p.get("broker") == "mt5" else "working on paper"
                 bot.answer(q["id"], "Confirmed")
-                bot.edit(chat_id, mid, f"<b>Confirmed (paper).</b> {esc(o['side']).upper()} {o['lots']:g} lots "
-                                       f"{esc(o['symbol'])} is working at limit {p.get('limit')}, stop {p.get('stop')}, "
+                bot.edit(chat_id, mid, f"<b>Confirmed.</b> {esc(o['side']).upper()} {o['lots']:g} lots "
+                                       f"{esc(o['symbol'])} is {where} at limit {p.get('limit')}, stop {p.get('stop')}, "
                                        f"target {p.get('target')}. You'll get a message when it fills.", [])
+            elif (o.get("params") or {}).get("mt5_error"):
+                bot.answer(q["id"], "MT5 refused")
+                bot.edit(chat_id, mid, f"<b>MT5 refused it.</b> Nothing was placed.\n{esc(o['params']['mt5_error'])}", [])
             else:
                 reasons = "\n".join(f"• {esc(x)}" for x in (o.get("risk_verdict") or {}).get("reasons") or [])
                 bot.answer(q["id"], "Blocked")
@@ -291,11 +303,11 @@ def on_paper(kind: str, user_id: str, data: dict) -> None:
     if not configured():
         return
     if kind == "filled":
-        text = (f"<b>Filled (paper):</b> {esc(data['side']).upper()} {data['lots']:g} lots {esc(data['symbol'])} at "
+        text = (f"<b>Filled ({esc(data.get('where') or 'paper')}):</b> {esc(data['side']).upper()} {data['lots']:g} lots {esc(data['symbol'])} at "
                 f"{data['price']}. Stop {data.get('stop')}, target {data.get('target')}.")
     elif kind == "closed":
         r = data.get("r")
-        text = (f"<b>Closed (paper):</b> {esc(data['side']).upper()} {esc(data['symbol'])} at {data['price']} "
+        text = (f"<b>Closed ({esc(data.get('where') or 'paper')}):</b> {esc(data['side']).upper()} {esc(data['symbol'])} at {data['price']} "
                 f"({esc(data['reason'])}). Net {_usd(data.get('net'))}" + (f", {r:+.2f}R." if r is not None else "."))
     elif kind == "expired":
         text = f"Paper order expired without a fill: {esc(data.get('why') or '')}."

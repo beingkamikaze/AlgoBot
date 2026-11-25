@@ -109,6 +109,51 @@ export function Ticket({ order, onDone }: { order: GlobalOrder; onDone: (o: Glob
   );
 }
 
+/** Where your confirmed tickets go: the app's simulator, or your MT5 demo account. */
+function RoutePanel({ data, onChange }: { data: GlobalPaperOverview; onChange: () => Promise<void> | void }) {
+  const { toast, confirm } = useFeedback();
+  const [busy, setBusy] = useState(false);
+  const route = data.route ?? "paper";
+  const mt5 = data.mt5;
+
+  async function choose(next: "paper" | "mt5_demo") {
+    if (next === route) return;
+    if (next === "mt5_demo" && !(await confirm({
+      title: "Send confirmed tickets to MT5 demo?",
+      body: "From now on, a ticket you confirm (here or on Telegram) goes to your MT5 demo account with its stop and target held at the broker. The risk check still sizes it and must PASS: risk overrides stay on the simulator. Fills and profits come from the broker. Demo accounts only.",
+      confirm: "Use MT5 demo", tone: "primary",
+    }))) return;
+    setBusy(true);
+    try {
+      await api("/global/paper/route", { method: "PUT", body: { route: next } });
+      toast("success", next === "mt5_demo" ? "Confirmed tickets now go to MT5 demo" : "Confirmed tickets now go to the simulator");
+      await onChange();
+    } catch (e) {
+      toast("error", "Could not switch", (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel title="Where confirmed tickets go" actions={route === "mt5_demo" ? <Badge tone="info">MT5 demo</Badge> : <Badge>Simulator</Badge>}>
+      <div className="grid grid-cols-2 gap-2">
+        {([["paper", "Simulator", "Fills from 1-minute bars with an assumed spread"], ["mt5_demo", "MT5 demo", "Your demo account at the broker, real spreads and fills"]] as const).map(([k, label, sub]) => (
+          <button key={k} disabled={busy || (k === "mt5_demo" && !mt5?.configured)} onClick={() => choose(k)}
+            className={`rounded-md border px-3 py-2 text-left ${route === k ? "border-accent bg-accent/[0.08]" : "border-line hover:border-line-strong"} disabled:opacity-50`}>
+            <span className="block text-[13px] font-medium">{label}</span>
+            <span className="block text-xs text-muted">{sub}</span>
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-muted">
+        {!mt5?.configured ? <>MT5 is not set up: run the bridge on Windows and put <code>MT5_BRIDGE_URL</code> and <code>MT5_BRIDGE_TOKEN</code> in <code>backend/.env</code>.</>
+          : <>MT5: {mt5.status ?? "not checked yet"}. Demo accounts only. Orders already at MT5 keep being followed whichever you choose.</>}
+      </p>
+    </Panel>
+  );
+}
+
 export function GlobalPaper() {
   const sb = supabase();
   const { toast, confirm } = useFeedback();
@@ -177,6 +222,13 @@ export function GlobalPaper() {
       {error && <Notice tone="error" title="Could not load the XAUUSD paper account">{error}</Notice>}
       {data?.loop.error && <Notice tone="warn" title="The paper loop is failing">{data.loop.error}</Notice>}
       {a?.kill_switch && <Notice tone="error" title="Kill switch is on">No new entries until the next trading day.</Notice>}
+      {!!data?.mt5?.mismatches?.length && (
+        <Notice tone="error" title="The app and your MT5 demo account disagree">
+          <ul className="list-disc pl-4">{data.mt5.mismatches.map((m) => <li key={m}>{m}</li>)}</ul>
+          Check the MT5 terminal. Nothing is changed automatically.
+        </Notice>
+      )}
+      {data?.mt5?.error && <Notice tone="warn" title="MT5 demo: last problem">{data.mt5.error}</Notice>}
       {data?.price_source === "futures" && (
         <Notice tone="warn" title="Priced from COMEX futures, not spot">
           No Twelve Data key is set, so paper trades use Yahoo&apos;s <code>GC=F</code>, which runs about 10 minutes late and sits a few dollars
@@ -203,7 +255,7 @@ export function GlobalPaper() {
                   <tbody>
                     {data.positions.map((t: GlobalTrade) => (
                       <tr key={t.id} title={t.entry_context?.why ?? undefined}>
-                        <td className="font-medium">{t.symbol}{t.entry_context?.override ? <span className="badge badge-warn ml-2" title="Taken although the risk check blocked it">override</span> : null}</td>
+                        <td className="font-medium">{t.symbol}{t.mode === "demo" ? <span className="badge badge-info ml-2" title="Filled at your MT5 demo account">MT5 demo</span> : null}{t.entry_context?.override ? <span className="badge badge-warn ml-2" title="Taken although the risk check blocked it">override</span> : null}</td>
                         <td><Side side={t.side} /></td><td className="r">{t.lots}</td><td className="r">{px(t.entry)}</td>
                         <td className="r">{px(t.last)}<span className="block text-2xs text-subtle">{age(t.price_age_seconds)}</span></td>
                         <td className="r text-down/90">{px(t.stop)}</td><td className="r text-up/90">{t.target != null ? px(t.target) : "–"}</td>
@@ -296,6 +348,7 @@ export function GlobalPaper() {
         </div>
 
         <div className="flex min-w-0 flex-col gap-4 xl:col-span-4">
+          {data && <RoutePanel data={data} onChange={load} />}
           <Panel title="Order ticket · XAUUSD">
             <p className="mb-3 text-xs text-muted">
               Leave lots empty and the size comes from your max loss per trade and position cap. Stop and target are on the price you would close at

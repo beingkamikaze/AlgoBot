@@ -147,7 +147,7 @@ def _day_start(day: dt.date) -> str:
 def account_state(user_id: str, account: dict, now: dt.datetime | None = None) -> tuple[AccountState, dict]:
     now = now or _now()
     d = db()
-    trades = d.select("global_trades", {"user_id": eq(user_id), "mode": eq("paper")}, order="entry_ts")
+    trades = d.select("global_trades", {"user_id": eq(user_id), "mode": "in.(paper,demo)"}, order="entry_ts")
     working = d.select("global_orders", {"user_id": eq(user_id), "state": eq("working")})
     day = trading_day(now)
     month = day.strftime("%Y-%m")
@@ -268,6 +268,10 @@ def approve(user_id: str, order_id: str, override: bool = False, reason: str = "
             raise PaperError(f"this order is {o['state']}, not waiting for your confirmation")
         p = o["params"]
         acct, lim_row = ensure_account(user_id)
+        to_mt5 = acct.get("route") == "mt5_demo"
+        if to_mt5 and override:
+            raise PaperError("a risk override is for the simulator only: confirmed tickets go to MT5 demo, which needs a "
+                             "PASS. Switch them back to Paper to override")
         st, _ = account_state(user_id, acct, now)
         px = price_info(p["symbol"], p["source"], now)
         v = check(OrderRequest(resolve(p["symbol"]), p["side"], float(p["lots"]), float(p["limit"]), float(p["stop"]),
@@ -286,6 +290,16 @@ def approve(user_id: str, order_id: str, override: bool = False, reason: str = "
             v = {**v, "overridden": True}
             audit(user_id, "risk_override", {"order_id": order_id, "reasons": v["reasons"], "note": reason.strip()[:300]})
         p = {**p, "placed_t": int(now.timestamp())}
+        if to_mt5:
+            from app.global_markets.mt5 import desk as mt5
+            w = day_window(trading_day(now), Limits.from_row(lim_row).window())
+            try:
+                p = mt5.send(o, p, mt5.window_expiry(now, w.entry_end if w else None, EXPIRE_SECONDS), now)
+            except mt5.Mt5Error as e:
+                out = d.update("global_orders", {"id": eq(order_id)}, {"state": "rejected", "risk_verdict": v, "updated_at": _iso(now),
+                                                                      "params": {**p, "broker": "mt5", "mt5_error": str(e)}})
+                audit(user_id, "mt5_refused", {"order_id": order_id, "why": str(e)}, actor="system")
+                return out[0]
         out = d.update("global_orders", {"id": eq(order_id)}, {"state": "working", "params": p, "risk_verdict": v,
                                                               "approved_at": _iso(now), "updated_at": _iso(now)})
         audit(user_id, "approve", {"order_id": order_id})
@@ -299,6 +313,12 @@ def cancel(user_id: str, order_id: str) -> dict:
         if not rows or rows[0]["state"] not in ("proposed", "working") or rows[0]["leg"] != "entry":
             raise PaperError("nothing to cancel")
         state = "rejected" if rows[0]["state"] == "proposed" else "cancelled"
+        if state == "cancelled" and (rows[0].get("params") or {}).get("broker") == "mt5":
+            from app.global_markets.mt5 import desk as mt5
+            try:
+                mt5.cancel(rows[0])
+            except mt5.Mt5Error as e:
+                raise PaperError(str(e)) from None
         out = d.update("global_orders", {"id": eq(order_id)}, {"state": state, "updated_at": _iso(_now())})
         audit(user_id, state, {"order_id": order_id})
         return out[0]
@@ -319,6 +339,15 @@ def close_position(user_id: str, trade_id: str, reason: str = "manual", now: dt.
         params = {"symbol": t["symbol"], "side": "sell" if t["side"] == "buy" else "buy", "lots": float(t["lots"]),
                   "units": float(t["units"]), "type": "MARKET-SIM", "leg": "exit", "source": t["price_source"], "reason": reason,
                   "placed_t": int(now.timestamp())}
+        if t["mode"] == "demo":                    # out at MT5 now; the sync records the broker's fill
+            from app.global_markets.mt5 import desk as mt5
+            params.update(type="MARKET", broker="mt5")
+            d.update("global_trades", {"id": eq(trade_id)}, {"entry_context": {**(t["entry_context"] or {}), "closing_reason": reason}})
+            try:
+                mt5.close(t, reason)
+            except mt5.Mt5Error as e:
+                if not e.ambiguous:
+                    raise PaperError(f"MT5 did not close it: {e}") from None
         o = d.insert("global_orders", {"user_id": user_id, "symbol": t["symbol"], "side": params["side"], "lots": t["lots"],
                                        "leg": "exit", "state": "working", "params": params, "trade_id": trade_id,
                                        "approved_at": _iso(now),
@@ -337,6 +366,13 @@ def kill_switch(user_id: str, now: dt.datetime | None = None) -> dict:
         d.insert("risk_events", {"user_id": user_id, "kind": "global_kill_switch", "ts": _iso(now), "detail": {"by": "user"}})
         cancelled = 0
         for o in d.select("global_orders", {"user_id": eq(user_id), "state": "in.(proposed,working)", "leg": eq("entry")}):
+            if o["state"] == "working" and (o.get("params") or {}).get("broker") == "mt5":
+                from app.global_markets.mt5 import desk as mt5
+                try:
+                    mt5.cancel(o)
+                except mt5.Mt5Error as e:          # it filled meanwhile: the sync records it and the close below follows
+                    log.warning("kill switch: MT5 cancel failed: %s", e)
+                    continue
             d.update("global_orders", {"id": eq(o["id"])}, {"state": "cancelled", "updated_at": _iso(now)})
             cancelled += 1
         closing = 0
@@ -385,7 +421,8 @@ def tick(now: dt.datetime | None = None) -> dict:
         for o in d.select("global_orders", {"state": eq("proposed"), "created_at": f"lt.{cutoff}"}):
             d.update("global_orders", {"id": eq(o["id"])}, {"state": "expired", "updated_at": _iso(now)})
             stats["expired"] += 1
-        working = d.select("global_orders", {"state": eq("working")}, order="created_at")
+        working = [o for o in d.select("global_orders", {"state": eq("working")}, order="created_at")
+                   if (o.get("params") or {}).get("broker") != "mt5"]                 # MT5 demo orders: mt5/desk.py
         open_trades = d.select("global_trades", {"mode": eq("paper"), "exit_ts": "is.null"})
         if not working and not open_trades:
             return stats
@@ -538,7 +575,33 @@ def overview(user_id: str) -> dict:
         "orders": orders,
         "trades": closed,
         "loop": loop_state,
+        "route": acct.get("route") or "paper",
+        "mt5": _mt5_summary(),
     }
+
+
+def _mt5_summary() -> dict:
+    from app.global_markets.mt5 import desk as mt5
+    return {"configured": mt5.configured(), **{k: mt5.state.get(k) for k in ("status", "error", "mismatches", "last_sync")}}
+
+
+def set_route(user_id: str, route: str) -> dict:
+    """Where your confirmed tickets go: "paper" (the simulator) or "mt5_demo". MT5 demo needs the bridge set up and a demo
+    account connected now. Orders and trades already at MT5 keep being followed whichever you choose."""
+    if route not in ("paper", "mt5_demo"):
+        raise PaperError("route must be paper or mt5_demo")
+    ensure_account(user_id)
+    if route == "mt5_demo":
+        from app.global_markets.mt5 import desk as mt5
+        if not mt5.configured():
+            raise PaperError("MT5 is not set up: put MT5_BRIDGE_URL and MT5_BRIDGE_TOKEN in backend/.env")
+        try:
+            mt5.broker().connect()                 # refuses a real account
+        except mt5.Mt5Error as e:
+            raise PaperError(f"cannot use MT5 demo: {e}") from None
+    db().update("global_accounts", {"user_id": eq(user_id)}, {"route": route})
+    audit(user_id, "route", {"route": route})
+    return {"route": route}
 
 
 def update_limits(user_id: str, values: dict) -> dict:

@@ -95,5 +95,6 @@ scan time: that fits noise.
 ## Not done yet
 
 - Real Kite has never been tested (only a fake broker): it needs the user's Kite Connect subscription. The MT5 adapter
-  (`global_markets/mt5/`) has only met `tests/fake_mt5.py`: it needs a Windows machine and a demo account, and must stay
-  demo-only (both the bridge and `Mt5Broker.connect` refuse real accounts) until the lawyer clears live gold. Docker images are also untested.
+  (`global_markets/mt5/`, including the demo routing in `mt5/desk.py`) has only met `tests/fake_mt5.py`: it needs a
+  Windows machine and a demo account, and must stay demo-only (both the bridge and `Mt5Broker.connect` refuse real
+  accounts) until the lawyer clears live gold. The MT5 route allows no risk override. Docker images are also untested.

@@ -126,13 +126,13 @@ export type GlobalOrder = {
   params: {
     units: number; limit?: number; stop?: number; target?: number | null; source: "spot" | "futures"; last_price?: number;
     price_age_seconds?: number; spread?: number; slippage?: number; why?: string; reason?: string; expired_because?: string;
-    override?: { reasons: string[]; note: string }; card?: GlobalCard;
+    override?: { reasons: string[]; note: string }; card?: GlobalCard; broker?: "mt5"; mt5_error?: string;
   };
   risk_verdict: GlobalVerdict | null; approved_at: string | null; created_at: string;
 };
 
 export type GlobalTrade = {
-  id: string; symbol: string; side: "buy" | "sell"; lots: number; units: number; price_source: "spot" | "futures";
+  id: string; mode?: "paper" | "live" | "demo"; symbol: string; side: "buy" | "sell"; lots: number; units: number; price_source: "spot" | "futures";
   entry_ts: string | null; exit_ts: string | null; entry: number | null; exit: number | null;
   gross_pnl: number | null; costs: number | null; net_pnl: number | null; r_multiple: number | null; exit_reason: string | null;
   rules_followed: boolean | null; trading_day: string | null;
@@ -226,6 +226,8 @@ export type GlobalPaperOverview = {
   orders: GlobalOrder[];
   trades: GlobalTrade[];
   loop: { at?: string; error?: string; filled?: number; expired?: number; closed?: number };
+  route?: "paper" | "mt5_demo";
+  mt5?: { configured: boolean; status: string | null; error: string | null; mismatches: string[] | null; last_sync: string | null };
 };
 
 export async function api<T>(path: string, init?: { method?: "GET" | "POST" | "PUT"; body?: unknown }): Promise<T> {

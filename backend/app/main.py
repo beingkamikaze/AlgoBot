@@ -62,6 +62,11 @@ async def lifespan(app: FastAPI):
         from app.global_markets.agent.desk import AgentLoop
         global_agent = AgentLoop()                 # the gold agent: looks when something happens, proposes; you confirm
         global_agent.start()
+    mt5_sync = None
+    if get_settings().supabase_service_role_key and get_settings().mt5_bridge_url and get_settings().mt5_bridge_token:
+        from app.global_markets.mt5.desk import SyncLoop
+        mt5_sync = SyncLoop()                      # MT5 demo: fills, exits, flat-by and checking the app against MT5
+        mt5_sync.start()
     telegram = None
     if get_settings().supabase_service_role_key and get_settings().telegram_bot_token:
         from app.global_markets import paper as global_paper
@@ -81,6 +86,8 @@ async def lifespan(app: FastAPI):
         recorder = Recorder()                      # NIFTY option chain every 5 minutes in market hours, local files
         recorder.start()
     yield
+    if mt5_sync:
+        mt5_sync.stop()
     if telegram:
         telegram.stop()
     if recorder:
